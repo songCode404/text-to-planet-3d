@@ -8,7 +8,7 @@ import * as CANNON from 'cannon-es'
  * 개기일식 장면을 초기화합니다. (Sun -> Moon -> Earth 정렬)
  * @returns {Object} { planets: Planet[], cameraPosition: {x, y, z} }
  */
-export function initSolarEclipseScene(scene, world, loader, aiData) {
+export function initSolarEclipseScene(scene, world, loader, aiData, ambientLight) {
     console.log("🌑 [SceneSolarEclipse] 함수 실행되었습니다.");
     const planets = [];
     const SCENARIO_TYPE = 'solar_eclipse';
@@ -71,49 +71,91 @@ export function initSolarEclipseScene(scene, world, loader, aiData) {
     // --- 3. 카메라 설정 ---
     const cameraPosition = { x: 0, y: SCALE_SIZE * 10, z: SCALE_DISTANCE * 3 }; 
 
-    const setupControls = (camera, controls) => { // ✨ controls 객체를 받도록 수정
-            const handleKeydown = (event) => {
-                if (event.key === 'Enter') {
-                    if (earth.mesh && moon.body) { // ✨ moon.body의 존재 여부 확인
 
-                        moon.body.position = new CANNON.Vec3(3, 0, -SCALE_SIZE * 5 );
-    
-                        const earthPos = earth.mesh.position;
-                        
-                        // 1. 카메라 위치 이동
-                        camera.position.set(
-                            earthPos.x,
-                            earthPos.y,
-                            earthPos.z
-                        );
-                        
-                        // 2. OrbitControls 타겟 업데이트
-                        controls.target.copy(sunData.position); // 컨트롤 타겟을 지구 중심으로 설정
-                        controls.update();
-                        
-                        // 3. ✨ 일식 애니메이션 시작 (달의 속도 설정)
-                        const moonVelocity = new CANNON.Vec3(-0.7, 0, 0); // X축 음수 방향으로 이동
-                        moon.body.velocity.copy(moonVelocity); 
-                        
-                        console.log("📸 카메라 이동 및 월식 애니메이션 시작.");
-                    } else {
-                        console.warn("⚠️ 행성 Mesh/Body가 정의되지 않아 카메라 이동/애니메이션 불가.");
-                    }
+    // ✨ setupControls 함수가 ambientLight를 세 번째 인수로 받도록 수정
+    const setupControls = (camera, controls, ambientLight) => { 
+            
+        // 전역 조명 밝기를 애니메이션하는 함수
+        const animateBrightness = (targetIntensity, duration) => {
+            if (!ambientLight) return; // ambientLight가 없으면 종료
+
+            const startIntensity = ambientLight.intensity;
+            const startTime = performance.now();
+            
+            const animate = (time) => {
+                const elapsed = time - startTime;
+                const progress = Math.min(elapsed / duration, 1.0);
+                
+                // 선형 보간 (밝기를 서서히 변화시킵니다)
+                ambientLight.intensity = startIntensity + (targetIntensity - startIntensity) * progress;
+                
+                if (progress < 1.0) {
+                    requestAnimationFrame(animate);
                 }
             };
             
-            window.addEventListener('keydown', handleKeydown);
-    
-            // Scene 종료 시 리스너를 정리할 함수 반환
-            return () => {
-                window.removeEventListener('keydown', handleKeydown);
-                console.log("🧹 월식 Scene 컨트롤이 정리되었습니다.");
-            };
+            requestAnimationFrame(animate);
         };
+        
+        const handleKeydown = (event) => {
+            if (event.key === 'Enter') {
+                if (earth.mesh && moon.body) {
+
+                    // 1. 초기 위치 설정 (일식 시작 직전 위치)
+                    moon.body.position = new CANNON.Vec3(5, 0, -SCALE_SIZE * 5 );
+                    const earthPos = earth.mesh.position;
+                    
+                    // 1. 카메라 위치 이동
+                    camera.position.set(earthPos.x,earthPos.y,earthPos.z)
+                        
+                    // 2. OrbitControls 타겟 업데이트
+                    controls.target.set(sunData.position.x, sunData.position.y, sunData.position.z); // 지구의 중심을 바라보도록 설정
+                    controls.update();
+
+                    // 3. ✨ 밝기 변화 애니메이션 시작 (최대 1.0 -> 0.1로 어두워짐)
+                    // 일식 시작 시 밝기를 2초 동안 0.1로 어둡게 합니다.
+                    const INITIAL_FADE_DURATION = 12000; // 3초
+                    animateBrightness(0.1, INITIAL_FADE_DURATION);
+
+                    // 4. ✨ 일식 애니메이션 시작 (달의 속도 설정)
+                    const MOON_SPEED = 0.5; // X축 속도 (유닛/초)
+                    const DISTANCE_TO_COVER = 6; // 달이 지나가야 하는 총 거리 (예: X=3에서 X=-3까지)
+                    const moonVelocity = new CANNON.Vec3(-MOON_SPEED, 0, 0); // 느린 속도
+                    moon.body.velocity = moonVelocity; // 직접 할당
+                    
+                    // 5. ✨ 일식 종료 후 밝기 복구 예약
+                    // 달이 지구를 완전히 가리는 데 걸리는 시간 (예: X=3에서 X=-3까지 이동, 속도 0.05 -> 6 / 0.05 = 120초)
+                    const MOVE_TIME_SECONDS = DISTANCE_TO_COVER / MOON_SPEED; // 예: 6 / 0.5 = 12초
+                    const TOTAL_DELAY_MS = (MOVE_TIME_SECONDS * 1000) + INITIAL_FADE_DURATION;
+                    //const animationDuration = (6 / 0.5) * (1000 / 60) + 2000; // 대략 2분 후 밝기 복구
+                    
+                   setTimeout(() => {
+                        animateBrightness(1.0, 3000); // 3초 동안 원래 밝기(1.0)로 복구
+                        
+                        // 달의 이동을 멈추거나 반대 방향으로 이동시켜 Scene을 정리합니다.
+                        // moon.body.velocity = new CANNON.Vec3(0, 0, 0); 
+                    }, TOTAL_DELAY_MS);
+                    
+                    console.log("📸 카메라 이동 및 일식 애니메이션 시작.");
+
+                } else {
+                    console.warn("⚠️ 행성 Mesh/Body가 정의되지 않아 카메라 이동/애니메이션 불가.");
+                }
+            }
+        };
+        
+        window.addEventListener('keydown', handleKeydown);
+        
+        // Scene 종료 시 리스너를 정리할 함수 반환
+        return () => {
+            window.removeEventListener('keydown', handleKeydown);
+            console.log("🧹 일식 Scene 컨트롤이 정리되었습니다.");
+        };
+    };
 
     return { 
         planets, 
         cameraPosition,
-        setupControls
+        setupControls : (camera, controls) => setupControls(camera, controls, ambientLight)
     };
 }
