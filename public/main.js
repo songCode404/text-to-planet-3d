@@ -1,4 +1,3 @@
-// main.js - 통합 버전 (Sequence UI + 정보창 + GiantImpact + Eclipse + AsteroidImpact 통합)
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -7,15 +6,14 @@ import { Planet } from './planet.js';
 import { getJsonFromAI } from './AIClient.js';
 
 // ─────────────────────────────────────────────────────────────
-// 시나리오 Import
+// 시나리오 Import (collision/giantimpact 제거)
 // ─────────────────────────────────────────────────────────────
-//import { initCollisionScene } from './scenarios/SceneCollision.js';
 import { initSolarSystem } from './scenarios/SceneSolarSystem.js';
 import { initBirthScene } from './scenarios/SceneBirth.js';
 import { initSolarEclipseScene } from './scenarios/SceneSolarEclips.js';
 import { initLunarEclipseScene } from './scenarios/SceneLunarEclips.js';
 
-// ✅ SceneAsteroidImpact.js (namespace import로 export 꼬임 방지)
+// ✅ SceneAsteroidImpact.js
 import * as AsteroidImpactMod from './scenarios/SceneAsteroidImpact.js';
 
 import { Explosion } from './Explosion.js';
@@ -55,16 +53,14 @@ function createUniverse() {
 }
 const universeMesh = createUniverse();
 
-// 카메라 설정
+// 카메라
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
 const originalCameraPosition = new THREE.Vector3(0, 50, 150);
 camera.position.copy(originalCameraPosition);
 camera.lookAt(0, 0, 0);
 
 // 조명
-const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
-scene.add(ambientLight);
-
+scene.add(new THREE.AmbientLight(0xffffff, 1.0));
 const sunLight = new THREE.PointLight(0xffffff, 2, 1000);
 sunLight.position.set(0, 0, 0);
 scene.add(sunLight);
@@ -76,28 +72,19 @@ const world = new CANNON.World();
 world.gravity.set(0, 0, 0);
 world.broadphase = new CANNON.NaiveBroadphase();
 
-// 통합 상태 관리
 let planets = [];
 let explosions = [];
 let currentScenarioType = '';
 let currentScenarioUpdater = null;
 let currentControlsCleanup = null;
 
-// Giant Impact 전용 상태
-let giantImpactTime = 0;
-let isGiantImpactPlaying = false;
-let gaiaRef = null;
-let theiaRef = null;
-let impactHappened = false;
-let timeScale = 1.0;
-
-// 카메라 추적 상태
+// 카메라 추적
 let followTarget = null;
 
-// ✅ Asteroid Impact 트레일 상태
+// AsteroidImpact 트레일
 let asteroidTrail = null;
 
-// Sequence 모드 상태
+// Sequence 모드
 let isSequenceMode = false;
 let sequenceSteps = [];
 let currentStepIndex = 0;
@@ -105,8 +92,6 @@ let currentStepIndex = 0;
 // ─────────────────────────────────────────────────────────────
 // 3. UI (Sequence Overlay) + 유틸리티
 // ─────────────────────────────────────────────────────────────
-
-// 시퀀스 안내용 UI 오버레이 (우측 하단)
 const sequenceOverlay = document.createElement('div');
 sequenceOverlay.style.position = 'absolute';
 sequenceOverlay.style.bottom = '20px';
@@ -123,8 +108,7 @@ sequenceOverlay.id = 'sequence-ui';
 document.body.appendChild(sequenceOverlay);
 
 // ─────────────────────────────────────────────────────────────
-// 충돌 섬광 + 충격파 링 (공용)
-// - GiantImpact / AsteroidImpact 둘 다 사용 가능
+// 충돌 섬광 + 충격파 링
 // ─────────────────────────────────────────────────────────────
 function createImpactFlash(pos) {
   const geometry = new THREE.SphereGeometry(1, 32, 32);
@@ -176,7 +160,7 @@ function createImpactFlash(pos) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// ✅ 소행성 “불꽃 트레일” (Asteroid Impact용)
+// ✅ 소행성 불꽃 트레일
 // ─────────────────────────────────────────────────────────────
 function createAsteroidFlameTrail(asteroid, earth) {
   const max = 1400;
@@ -277,7 +261,7 @@ function createAsteroidFlameTrail(asteroid, earth) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 🌍☄️ 소행성 충돌 폭발 (병합 대신 폭발 + 파편)
+// ✅ 소행성 충돌 폭발 + 파편
 // ─────────────────────────────────────────────────────────────
 function startAsteroidImpactExplosion(earth, asteroid) {
   if (!earth?.mesh || !asteroid?.mesh) return;
@@ -396,39 +380,29 @@ function createAsteroidDebris(impactPos, impactNormal, earthRadius) {
   explosions.push(debris);
 }
 
+// ─────────────────────────────────────────────────────────────
 // 씬 초기화
+// ─────────────────────────────────────────────────────────────
 function resetScene() {
   currentScenarioUpdater = null;
   followTarget = null;
-  giantImpactTime = 0;
-  isGiantImpactPlaying = false;
-  impactHappened = false;
-  timeScale = 1.0;
 
-  // ✅ 소행성 트레일 정리
   if (asteroidTrail?.dispose) asteroidTrail.dispose();
   asteroidTrail = null;
 
-  // 정보창 숨김
   if (infoBox) infoBox.style.display = 'none';
 
-  // 시나리오별 컨트롤 cleanup
   if (currentControlsCleanup) {
     currentControlsCleanup();
     currentControlsCleanup = null;
   }
 
-  // Planet 정리
-  for (const p of planets) {
-    if (p.dispose) p.dispose();
-  }
+  for (const p of planets) p.dispose?.();
   planets = [];
 
-  // Explosion/파편/트레일 정리
   for (const e of explosions) e.dispose?.();
   explosions = [];
 
-  // 씬 오브젝트 정리 (라이트/카메라/배경 제외)
   for (let i = scene.children.length - 1; i >= 0; i--) {
     const obj = scene.children[i];
     if (obj.isLight || obj.isCamera || obj === universeMesh) continue;
@@ -441,11 +415,9 @@ function resetScene() {
     }
   }
 
-  if (currentScenarioType !== 'giant_impact') {
-    controls.target.set(0, 0, 0);
-    controls.enableZoom = true;
-    controls.enableRotate = true;
-  }
+  controls.target.set(0, 0, 0);
+  controls.enableZoom = true;
+  controls.enableRotate = true;
 
   console.log('🧹 씬 초기화 완료');
 }
@@ -460,6 +432,9 @@ window.createExplosion = (position, color) => {
   }
 };
 
+// ─────────────────────────────────────────────────────────────
+// 충돌 체크 (Earth+Asteroid만 폭발 처리)
+// ─────────────────────────────────────────────────────────────
 function checkCollisions() {
   if (currentScenarioType === 'solar_eclipse' || currentScenarioType === 'lunar_eclipse') return;
   if (planets.length < 2) return;
@@ -470,11 +445,21 @@ function checkCollisions() {
       const p2 = planets[j];
       if (p1.isDead || p2.isDead) continue;
 
+      const n1 = (p1.data?.name || '').toLowerCase();
+      const n2 = (p2.data?.name || '').toLowerCase();
+      const combined = n1 + n2;
+
+      const hasEarth = combined.includes('earth');
+      const hasAsteroid = combined.includes('asteroid');
+      if (!hasEarth || !hasAsteroid) continue;
+
       const dist = p1.mesh.position.distanceTo(p2.mesh.position);
-      const threshold = (p1.radius + p2.radius) * 0.9;
+      const threshold = (p1.radius + p2.radius) * 1.05; // 조금 넉넉하게
 
       if (dist < threshold) {
-        window.handleMerger(p1, p2);
+        const earth = n1.includes('earth') ? p1 : p2;
+        const asteroid = n1.includes('asteroid') ? p1 : p2;
+        startAsteroidImpactExplosion(earth, asteroid);
       }
     }
   }
@@ -502,12 +487,6 @@ function playStep(index) {
 
   const stepData = sequenceSteps[index];
   currentStepIndex = index;
-
-  console.log(`▶ Step ${index + 1} 데이터:`, stepData);
-
-  if (!stepData.objects || stepData.objects.length === 0) {
-    console.warn('⚠️ 경고: 이 단계에는 objects 데이터가 없습니다.');
-  }
 
   createSceneFromData(stepData);
 
@@ -542,50 +521,7 @@ function endSequence() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 4. Giant Impact 로직
-// ─────────────────────────────────────────────────────────────
-function startGiantImpactTimeline() {
-  giantImpactTime = 0;
-  isGiantImpactPlaying = true;
-  impactHappened = false;
-  followTarget = null;
-
-  if (theiaRef?.body) {
-    theiaRef.body.velocity.set(-8, 0, 0);
-  }
-}
-
-function updateGiantImpactCamera(delta) {
-  if (!isGiantImpactPlaying) return;
-  giantImpactTime += delta;
-
-  if (giantImpactTime < 4) {
-    timeScale = 0.7;
-    const targetPos = new THREE.Vector3(0, 35, 260);
-    camera.position.lerp(targetPos, 0.03);
-    controls.target.lerp(new THREE.Vector3(0, 0, 0), 0.1);
-  } else if (giantImpactTime < 8) {
-    timeScale = 0.3;
-    const targetPos = new THREE.Vector3(0, 20, 120);
-    camera.position.lerp(targetPos, 0.05);
-  } else {
-    timeScale = 0.5;
-    const t = giantImpactTime - 8;
-    const radius = 150;
-    const height = 25;
-    const speed = 0.2;
-    camera.position.lerp(
-      new THREE.Vector3(Math.cos(speed * t) * radius, height, Math.sin(speed * t) * radius),
-      0.08
-    );
-    camera.lookAt(0, 0, 0);
-  }
-}
-
-// ─────────────────────────────────────────────────────────────
-// 전역 병합 핸들러
-// - ✅ Earth+Asteroid는 병합 대신 폭발
-// - ✅ GiantImpact는 기존 연출 유지
+// ✅ 병합 핸들러: "Earth+Asteroid 폭발"만 담당 (giantimpact/일반 병합 제거)
 // ─────────────────────────────────────────────────────────────
 window.handleMerger = (p1, p2) => {
   if (p1.isDead || p2.isDead) return;
@@ -597,78 +533,11 @@ window.handleMerger = (p1, p2) => {
   const hasEarth = combined.includes('earth');
   const hasAsteroid = combined.includes('asteroid');
 
-  // ✅ Earth + Asteroid → 폭발 (병합 X)
   if (hasEarth && hasAsteroid) {
     const earth = n1.includes('earth') ? p1 : p2;
     const asteroid = n1.includes('asteroid') ? p1 : p2;
     startAsteroidImpactExplosion(earth, asteroid);
-    return;
   }
-
-  // Giant Impact 판단
-  const isGiantImpact = combined.includes('theia');
-
-  if (currentScenarioType === 'giant_impact') {
-    if (impactHappened) return;
-    impactHappened = true;
-  }
-
-  const newMass = p1.mass + p2.mass;
-  const newRadius = Math.cbrt(Math.pow(p1.radius, 3) + Math.pow(p2.radius, 3));
-  const ratio = p1.mass / newMass;
-
-  const newPos = {
-    x: p1.body.position.x * ratio + p2.body.position.x * (1 - ratio),
-    y: p1.body.position.y * ratio + p2.body.position.y * (1 - ratio),
-    z: p1.body.position.z * ratio + p2.body.position.z * (1 - ratio),
-  };
-  const newVel = {
-    x: (p1.mass * p1.body.velocity.x + p2.mass * p2.body.velocity.x) / newMass,
-    y: (p1.mass * p1.body.velocity.y + p2.mass * p2.body.velocity.y) / newMass,
-    z: (p1.mass * p1.body.velocity.z + p2.mass * p2.body.velocity.z) / newMass,
-  };
-
-  p1.isDead = true;
-  p2.isDead = true;
-
-  setTimeout(() => {
-    const loader = new THREE.TextureLoader();
-    const textureKey = isGiantImpact
-      ? 'MoltenEarth'
-      : p1.mass > p2.mass
-      ? p1.data.textureKey
-      : p2.data.textureKey;
-
-    const name = isGiantImpact ? 'Molten-Earth' : `Merged-${p1.data.name}`;
-
-    const mergedPlanet = new Planet(
-      scene,
-      world,
-      loader,
-      {
-        name,
-        textureKey,
-        size: newRadius / 3.0,
-        mass: newMass,
-        position: newPos,
-        velocity: newVel,
-      },
-      'merge_event'
-    );
-
-    if (isGiantImpact) {
-      mergedPlanet.mesh.material.color.setHex(0xffaa00);
-      mergedPlanet.mesh.material.emissive = new THREE.Color(0xff2200);
-      mergedPlanet.mesh.material.emissiveIntensity = 3.0;
-
-      // ✅ 섬광 연출 (정의가 없어서 에러나던 부분도 이제 해결됨)
-      createImpactFlash(new THREE.Vector3(newPos.x, newPos.y, newPos.z));
-    } else {
-      window.createExplosion(newPos, 0xffffff);
-    }
-
-    planets.push(mergedPlanet);
-  }, 50);
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -682,22 +551,13 @@ async function createSceneFromData(aiData) {
     return;
   }
 
-  // AI가 type으로 보내는 경우 등 호환 처리
   let safeScenarioType = (aiData.scenarioType || aiData.type || '').toLowerCase().trim();
-  console.log(`🎬 씬 생성: ${safeScenarioType}`);
-
-  // Theia 감지 -> giant_impact 강제 전환
-  const hasTheia = aiData.objects?.some((o) => o.name && o.name.toLowerCase().includes('theia'));
-  if (hasTheia) safeScenarioType = 'giant_impact';
 
   // ✅ Earth+Asteroid 감지 -> asteroid_impact 강제 전환
   const names = aiData.objects?.map((o) => (o.name || '').toLowerCase()) || [];
   const hasEarth = names.some((n) => n.includes('earth'));
   const hasAsteroid = names.some((n) => n.includes('asteroid'));
-  if (hasEarth && hasAsteroid) {
-    console.log("☄️ 'Earth' + 'Asteroid' 감지 -> asteroid_impact 로 전환");
-    safeScenarioType = 'asteroid_impact';
-  }
+  if (hasEarth && hasAsteroid) safeScenarioType = 'asteroid_impact';
 
   currentScenarioType = safeScenarioType;
 
@@ -705,10 +565,6 @@ async function createSceneFromData(aiData) {
   const loader = new THREE.TextureLoader();
 
   switch (safeScenarioType) {
-    case 'collision':
-      setupData = initCollisionScene(scene, world, loader, aiData);
-      break;
-
     case 'solar_system':
     case 'orbit':
       setupData = initSolarSystem(scene, world, loader, aiData);
@@ -727,8 +583,6 @@ async function createSceneFromData(aiData) {
       break;
 
     case 'asteroid_impact': {
-      console.log('[AsteroidImpact exports]', Object.keys(AsteroidImpactMod));
-
       if (typeof AsteroidImpactMod.initAsteroidImpact !== 'function') {
         console.error('🚨 SceneAsteroidImpact.js 에서 initAsteroidImpact export를 찾지 못함');
         console.error('📌 exports:', Object.keys(AsteroidImpactMod));
@@ -746,17 +600,6 @@ async function createSceneFromData(aiData) {
       }
       break;
     }
-
-    case 'giant_impact':
-      // ⚠️ 너 기존 코드에 initGiantImpact가 다른 파일에 있을 수 있는데,
-      // 여기서는 "기존 main.js의 구조를 유지"하려고 그대로 둠.
-      // 만약 initGiantImpact가 실제로 import되어 있지 않다면,
-      // 네 프로젝트에서 기존대로 import를 추가해야 함.
-      setupData = initGiantImpact(scene, world, loader, aiData);
-      gaiaRef = setupData.gaia;
-      theiaRef = setupData.theia;
-      startGiantImpactTimeline();
-      break;
 
     default:
       setupData = { planets: [], cameraPosition: aiData.cameraPosition };
@@ -777,39 +620,29 @@ async function createSceneFromData(aiData) {
       currentControlsCleanup = setupData.setupControls(camera, controls);
     }
 
-    // 카메라 위치 안전장치
     const defaultCamPos = { x: 0, y: 50, z: 150 };
     const camPos = setupData.cameraPosition || aiData.cameraPosition || defaultCamPos;
     const lookAtPos = setupData.cameraLookAt || { x: 0, y: 0, z: 0 };
 
-    if (!isGiantImpactPlaying) {
-      const x = Number.isFinite(camPos.x) ? camPos.x : 0;
-      const y = Number.isFinite(camPos.y) ? camPos.y : 50;
-      const z = Number.isFinite(camPos.z) ? camPos.z : 150;
+    const x = Number.isFinite(camPos.x) ? camPos.x : 0;
+    const y = Number.isFinite(camPos.y) ? camPos.y : 50;
+    const z = Number.isFinite(camPos.z) ? camPos.z : 150;
 
-      camera.position.set(x, y, z);
-      camera.lookAt(lookAtPos.x || 0, lookAtPos.y || 0, lookAtPos.z || 0);
-      controls.target.set(lookAtPos.x || 0, lookAtPos.y || 0, lookAtPos.z || 0);
-      originalCameraPosition.set(x, y, z);
+    camera.position.set(x, y, z);
+    camera.lookAt(lookAtPos.x || 0, lookAtPos.y || 0, lookAtPos.z || 0);
+    controls.target.set(lookAtPos.x || 0, lookAtPos.y || 0, lookAtPos.z || 0);
+    originalCameraPosition.set(x, y, z);
 
-      controls.update();
-    }
+    controls.update();
   }
 }
 
 // ─────────────────────────────────────────────────────────────
-// 6. 물리 로직
+// 6. 물리 로직 (중력)
 // ─────────────────────────────────────────────────────────────
 function applyGravity() {
-  // ✅ 충돌/탄생/소행성 충돌에서는 중력 끔
-  if (
-    currentScenarioType === 'collision' ||
-    currentScenarioType === 'planet_birth' ||
-    currentScenarioType === 'asteroid_impact'
-  ) {
-    return;
-  }
-
+  // ✅ 탄생/소행성 충돌에서는 중력 끔
+  if (currentScenarioType === 'planet_birth' || currentScenarioType === 'asteroid_impact') return;
   if (planets.length < 2) return;
 
   const sortedPlanets = [...planets].sort((a, b) => b.mass - a.mass);
@@ -830,31 +663,8 @@ function applyGravity() {
   }
 }
 
-function applyMutualDeformation(deltaTime) {
-  if (currentScenarioType !== 'giant_impact' || planets.length < 2) return;
-
-  for (const p of planets) p.targetDeformAmount = 0;
-
-  for (let i = 0; i < planets.length; i++) {
-    for (let j = i + 1; j < planets.length; j++) {
-      const a = planets[i];
-      const b = planets[j];
-      const dist = a.mesh.position.distanceTo(b.mesh.position);
-      const sumR = a.radius + b.radius;
-
-      if (dist > sumR * 1.4) continue;
-      const t = THREE.MathUtils.clamp(1 - (dist - sumR * 0.7) / (sumR * 0.7), 0, 1);
-      if (t <= 0) continue;
-
-      const dirAB = new THREE.Vector3().subVectors(b.mesh.position, a.mesh.position).normalize();
-      a.setDeform(dirAB, t);
-      b.setDeform(dirAB.clone().negate(), t);
-    }
-  }
-}
-
 // ─────────────────────────────────────────────────────────────
-// 7. 사용자 입력 (AI 요청 & Raycasting Interaction)
+// 7. 사용자 입력
 // ─────────────────────────────────────────────────────────────
 const inputField = document.getElementById('user-input');
 const sendBtn = document.getElementById('send-btn');
@@ -867,16 +677,13 @@ async function handleUserRequest() {
   sendBtn.disabled = true;
   inputField.disabled = true;
 
-  // 새 요청이 오면 기존 시퀀스 중단 및 UI 숨김
   isSequenceMode = false;
   sequenceOverlay.style.display = 'none';
 
   try {
     statusDiv.innerText = 'AI가 생각 중... 🤔';
-
     const aiData = await getJsonFromAI(text);
 
-    // 시퀀스 모드 vs 단일 모드
     if ((aiData.scenarioType || '').toLowerCase() === 'sequence') {
       statusDiv.innerText = `✅ 시퀀스 모드: 총 ${aiData.steps?.length ?? 0}개 장면`;
       startSequence(aiData.steps);
@@ -902,7 +709,9 @@ if (sendBtn) {
   });
 }
 
+// ─────────────────────────────────────────────────────────────
 // Raycasting + 정보창
+// ─────────────────────────────────────────────────────────────
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 const infoBox = document.getElementById('planet-info');
@@ -921,8 +730,6 @@ const planetDescriptions = {
   uranus: '천왕성 (Uranus)\n자전축이 98도 기울어져 누워서 공전하는 얼음 거인입니다.\n\n• 지름: 50,724 km (지구의 4배)\n• 질량: 8.681 × 10^25 kg (지구의 14.5배)\n• 대기: 수소, 헬륨, 메탄',
   neptune: '해왕성 (Neptune)\n태양계의 마지막 행성으로, 강력한 폭풍이 붑니다.\n\n• 지름: 49,244 km (지구의 3.8배)\n• 질량: 1.024 × 10^26 kg (지구의 17배)\n• 색상: 짙은 푸른색',
   pluto: '명왕성 (Pluto)\n현재는 왜소행성으로 분류된 작은 천체입니다.\n\n• 지름: 2,377 km\n• 질량: 1.309 × 10^22 kg (지구의 0.002배)\n• 표면: 질소 얼음과 암석',
-  'molten-earth':
-    '파괴된 지구 (Molten Earth)\n거대 충돌 직후의 가상의 지구입니다.\n\n• 상태: 지각 붕괴 및 마그마 바다 형성\n• 온도: 약 2,000°C 이상\n• 거주가능성: 불가능',
 };
 
 let isDragging = false;
@@ -937,7 +744,6 @@ window.addEventListener('pointermove', () => {
 });
 window.addEventListener('pointerup', (event) => {
   if (isDragging || Date.now() - mouseDownTime > 200) return;
-  if (isGiantImpactPlaying) return;
 
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
@@ -964,8 +770,6 @@ window.addEventListener('pointerup', (event) => {
         infoTitle.innerText = foundName.toUpperCase();
         infoDesc.innerText = planetDescriptions[foundName] || foundName;
         infoBox.style.display = 'block';
-
-        // 정보창 우측 상단 고정
         infoBox.style.left = 'auto';
         infoBox.style.top = '20px';
         infoBox.style.right = '20px';
@@ -975,7 +779,6 @@ window.addEventListener('pointerup', (event) => {
 
   if (foundTarget) {
     followTarget = foundTarget;
-    console.log(`🔭 추적: ${foundName}`);
   } else {
     followTarget = null;
     if (infoBox) infoBox.style.display = 'none';
@@ -992,25 +795,20 @@ controls.dampingFactor = 0.05;
 
 function animate() {
   requestAnimationFrame(animate);
-  const rawDelta = clock.getDelta();
+  const deltaTime = clock.getDelta();
 
-  if (currentScenarioType === 'giant_impact' && isGiantImpactPlaying) {
-    updateGiantImpactCamera(rawDelta);
-  } else {
-    timeScale = 1.0;
-  }
-
-  const deltaTime = rawDelta * timeScale;
-
+  // 1️⃣ 중력 적용
   applyGravity();
-  checkCollisions();
+
+  // 2️⃣ 물리 월드 스텝
   world.step(1 / 60, deltaTime, 10);
 
+  // 3️⃣ Planet 업데이트 (body → mesh 동기화)
   for (let i = planets.length - 1; i >= 0; i--) {
     const p = planets[i];
     p.update(deltaTime);
 
-    // ✅ SceneAsteroidImpact.js의 customUpdate(앞면 글로우/불티 스파크) 실행
+    // SceneAsteroidImpact 전용 커스텀 이펙트
     if (p.customUpdate) p.customUpdate(deltaTime);
 
     if (p.isDead) {
@@ -1019,26 +817,36 @@ function animate() {
     }
   }
 
-  applyMutualDeformation(deltaTime);
+  // ✅ 4️⃣ mesh 위치가 확정된 후 충돌 체크
+  checkCollisions();
 
+  // 5️⃣ 폭발 / 파편 업데이트
   for (let i = explosions.length - 1; i >= 0; i--) {
     explosions[i].update?.();
     if (explosions[i].isFinished) explosions.splice(i, 1);
   }
 
+  // 6️⃣ 시나리오별 updater
   if (currentScenarioUpdater) currentScenarioUpdater(deltaTime);
 
+  // 7️⃣ 우주 배경 회전
   if (universeMesh) universeMesh.rotation.y += 0.0001;
 
-  if (!isGiantImpactPlaying && followTarget) {
+  // 8️⃣ 추적 카메라
+  if (followTarget) {
     const targetPos = new THREE.Vector3();
     followTarget.getWorldPosition(targetPos);
     controls.target.lerp(targetPos, 0.05);
 
     const dist = camera.position.distanceTo(targetPos);
     if (dist > 40) {
-      const dir = new THREE.Vector3().subVectors(camera.position, targetPos).normalize();
-      camera.position.lerp(targetPos.clone().add(dir.multiplyScalar(40)), 0.05);
+      const dir = new THREE.Vector3()
+        .subVectors(camera.position, targetPos)
+        .normalize();
+      camera.position.lerp(
+        targetPos.clone().add(dir.multiplyScalar(40)),
+        0.05
+      );
     }
   }
 
