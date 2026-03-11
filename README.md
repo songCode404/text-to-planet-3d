@@ -38,17 +38,19 @@ LLM(Gemini → 추후 GPT 지원 예정)이 해석하여
       <img src="docs/team/park_soyeon.png" width="120"/><br/>
       <strong>20211333 박소연</strong><br/>
       개기일식·개기월식 씬 제작<br/>
-      STT 기능 연결
+      STT 기능 연결<br/>
     </td>
     <td align="center">
       <img src="docs/team/eom_seorin.png" width="120"/><br/>
       <strong>20211365 엄서린</strong><br/>
-      DB
+      Mongo DB<br/>
+      백엔드
     </td>
     <td align="center">
       <img src="docs/team/hwang_jaeyoon.png" width="120"/><br/>
       <strong>20211423 황재윤</strong><br/>
-      지구–소행성 충돌 씬 제작
+      지구–소행성 충돌 씬 제작<br/>
+      프론트엔드
     </td>
   </tr>
 </table>
