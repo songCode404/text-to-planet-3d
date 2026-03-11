@@ -31,7 +31,7 @@ LLM(Gemini → 추후 GPT 지원 예정)이 해석하여
       <img src="docs/team/song_gayoung.png" width="120"/><br/>
       <strong>20211351 송가영</strong><br/>
       태양계 공전·자전 씬 제작<br/>
-      프론트엔드
+      프론트엔드 및 RAG 연결 시나리오 임베딩
     </td>
     <td align="center">
       <img src="docs/team/park_soyeon.png" width="120"/><br/>
